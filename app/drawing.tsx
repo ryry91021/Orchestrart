@@ -9,6 +9,16 @@ export default function DrawingPage() {
     const webviewRef = useRef(null);
     const [selectedColor, setSelectedColor] = useState('black');
 
+    const [isDarkMode, setIsDarkMode] = useState(false);
+
+    const toggleDarkMode = () => {
+      setIsDarkMode(!isDarkMode);
+      const bg = !isDarkMode ? 'black' : 'white';
+      const fg = !isDarkMode ? 'white' : 'black';
+      sendToWebView(`window.setTheme("${bg}", "${fg}");`);
+    };
+
+
     const sendToWebView = (jsCode: string) => {
         (webviewRef.current as any)?.injectJavaScript(jsCode);
     };
@@ -30,8 +40,11 @@ export default function DrawingPage() {
           const ctx = canvas.getContext('2d');
           let painting = false;
           let currentColor = 'black';
+          let currentBackground = 'white';
           let lineWidth = 5;
           let paths = [];
+          let redostack = [];
+
 
           function resizeCanvas() {
             canvas.width = window.innerWidth;
@@ -61,7 +74,9 @@ export default function DrawingPage() {
           }
 
           function redraw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = currentBackground;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
             for (let path of paths) {
               ctx.beginPath();
               for (let i = 0; i < path.length; i++) {
@@ -76,6 +91,7 @@ export default function DrawingPage() {
               ctx.stroke();
             }
           }
+
 
           canvas.addEventListener('touchstart', startDraw);
           canvas.addEventListener('touchmove', draw);
@@ -92,6 +108,12 @@ export default function DrawingPage() {
             console.log('Redo Stack:', redostack);
             redraw();
         }
+        };
+
+        window.setTheme = function (bg, fg) {
+          canvas.style.backgroundColor = bg;
+          currentColor = fg;
+          redraw();
         };
 
         window.redo = function () {
@@ -138,6 +160,11 @@ export default function DrawingPage() {
 
                 <View style={styles.buttonRow}>
                     <Button title="Undo" onPress={() => sendToWebView('window.undo();')} />
+                <Button
+                  title={isDarkMode ? 'Light Mode' : 'Dark Mode'}
+                  onPress={toggleDarkMode}
+                />
+
                     <Button
                         title="Clear"
                         onPress={() => {
