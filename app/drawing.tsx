@@ -3,7 +3,7 @@ import { View, StyleSheet, Button, ScrollView, TouchableOpacity, Text } from 're
 import { WebView } from 'react-native-webview';
 import { Alert } from 'react-native';
 
-const colors = ['black', 'red', 'blue', 'green', 'orange', 'purple', 'white']; // white = eraser
+const colors = ['black', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'white']; // white = eraser
 
 export default function DrawingPage() {
     const webviewRef = useRef(null);
