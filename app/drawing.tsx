@@ -2,13 +2,17 @@ import React, { useRef, useState } from 'react';
 import { View, StyleSheet, Button, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { WebView as WebViewType } from 'react-native-webview';
+import {Audio} from "expo-av";
 
 const colors = ['black', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'white'];
 
+//main drawing page
 export default function DrawingPage() {
   const webviewRef = useRef<WebViewType>(null);
   const [selectedColor, setSelectedColor] = useState('black');
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [musicEnabled, setMusicEnabled] = useState(false);
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
 
   const sendToWebView = (jsCode: string) => {
     webviewRef.current?.injectJavaScript(jsCode);
@@ -20,6 +24,25 @@ export default function DrawingPage() {
     const bg = nextMode ? 'black' : 'white';
     sendToWebView(`window.setTheme("${bg}");`);
   };
+
+  const playMusic = async () => {
+    if (!sound) {
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        require('./assets/music.mp3'), // replace with your file
+        { shouldPlay: true, isLooping: true }
+      );
+      setSound(newSound);
+    } else {
+      await sound.playAsync();
+    }
+  };
+  
+  const pauseMusic = async () => {
+    if (sound) {
+      await sound.pauseAsync();
+    }
+  };
+  
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -131,6 +154,19 @@ export default function DrawingPage() {
           redostack = [];
           redraw();
         };
+
+        function startDraw(e) {
+          painting = true;
+          const pos = getTouchPos(e);
+          const path = [{ x: pos.x, y: pos.y, color: currentColor }];
+          paths.push(path);
+          window.ReactNativeWebView?.postMessage("startDrawing");
+        }
+
+        function endDraw() {
+          painting = false;
+          window.ReactNativeWebView?.postMessage("stopDrawing");
+        }
       </script>
     </body>
     </html>
@@ -144,6 +180,28 @@ export default function DrawingPage() {
         source={{ html: htmlContent }}
         javaScriptEnabled
         style={styles.webview}
+        onMessage={async (event) => {
+          const msg = event.nativeEvent.data;
+      
+          if (msg === 'startDrawing') {
+            if (musicEnabled) {
+              if (!sound) {
+                const { sound: newSound } = await Audio.Sound.createAsync(
+                  require('./assets/music.mp3'),
+                  { shouldPlay: true, isLooping: true }
+                );
+                setSound(newSound);
+                await newSound.playAsync();
+              } else {
+                await sound.playAsync();
+              }
+            }
+          } else if (msg === 'stopDrawing') {
+            if (sound && musicEnabled) {
+              await sound.pauseAsync();
+            }
+          }
+        }}
       />
 
       <View style={styles.controls}>
@@ -179,6 +237,7 @@ export default function DrawingPage() {
             }
           />
           <Button title="Redo" onPress={() => sendToWebView('window.redo();')} />
+          <Button title={musicEnabled ? 'Music On' : 'Music Off'} onPress={async () => {setMusicEnabled((prev) => !prev); if (musicEnabled && sound) {await sound.pauseAsync();}}}/>
         </View>
       </View>
     </View>
