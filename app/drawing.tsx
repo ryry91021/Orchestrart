@@ -1,7 +1,9 @@
 import React, { useRef, useState } from 'react';
-import { View, StyleSheet, Button, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, Button, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { WebView as WebViewType } from 'react-native-webview';
+
+const eraserIcon = require('../assets/images/eraser_button.png');
 
 const colors = ['black', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'white'];
 
@@ -9,6 +11,7 @@ export default function DrawingPage() {
   const webviewRef = useRef<WebViewType>(null);
   const [selectedColor, setSelectedColor] = useState('black');
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isEraser, setIsEraser] = useState(false);
 
   const sendToWebView = (jsCode: string) => {
     webviewRef.current?.injectJavaScript(jsCode);
@@ -19,6 +22,18 @@ export default function DrawingPage() {
     setIsDarkMode(nextMode);
     const bg = nextMode ? 'black' : 'white';
     sendToWebView(`window.setTheme("${bg}");`);
+
+    if (isEraser) {
+      sendToWebView(`window.setColor("${bg}");`);
+    }
+  };
+
+  const toggleEraser = () => {
+    const newIsEraser = !isEraser;
+    setIsEraser(newIsEraser);
+    const eraserColor = isDarkMode ? 'black' : 'white';
+    const colorToUse = newIsEraser ? eraserColor : selectedColor;
+    sendToWebView(`window.setColor("${colorToUse}");`);
   };
 
   const htmlContent = `
@@ -61,20 +76,65 @@ export default function DrawingPage() {
           };
         }
 
+        function distance(p1, p2) {
+          return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+        }
+
         function startDraw(e) {
-          painting = true;
           const pos = getTouchPos(e);
+
+          if (currentColor === currentBackground) {
+            // Eraser: immediately delete any points near the touch
+            eraseAt(pos);
+            redraw();
+            return;
+          }
+
+          painting = true;
           const path = [{ x: pos.x, y: pos.y, color: currentColor }];
           paths.push(path);
         }
 
         function draw(e) {
-          if (!painting) return;
           const pos = getTouchPos(e);
+
+          if (currentColor === currentBackground) {
+            eraseAt(pos);
+            redraw();
+            return;
+          }
+
+          if (!painting) return;
           const path = paths[paths.length - 1];
           path.push({ x: pos.x, y: pos.y, color: currentColor });
           redraw();
         }
+
+        function eraseAt(pos) {
+          const radius = 10;
+
+          for (let pathIndex = paths.length - 1; pathIndex >= 0; pathIndex--) {
+            const path = paths[pathIndex];
+            for (let i = 0; i < path.length; i++) {
+              const p = path[i];
+              if (!p) continue;
+              const dx = p.x - pos.x;
+              const dy = p.y - pos.y;
+              if (dx * dx + dy * dy < radius * radius) {
+                path[i] = null; // mark point as erased
+              }
+            }
+
+            // If all points in the path are null, remove the path
+            if (path.every(p => p === null)) {
+              paths.splice(pathIndex, 1);
+            }
+          }
+        }
+
+
+
+
 
         function endDraw() {
           painting = false;
@@ -83,20 +143,37 @@ export default function DrawingPage() {
         function redraw() {
           ctx.fillStyle = currentBackground;
           ctx.fillRect(0, 0, canvas.width, canvas.height);
+
           for (let path of paths) {
             ctx.beginPath();
-            for (let i = 0; i < path.length; i++) {
-              ctx.strokeStyle = path[i].color;
-              ctx.lineWidth = lineWidth;
-              if (i === 0) {
-                ctx.moveTo(path[i].x, path[i].y);
-              } else {
-                ctx.lineTo(path[i].x, path[i].y);
+            ctx.lineWidth = lineWidth;
+
+            let segment = [];
+
+            for (let i = 0; i <= path.length; i++) {
+              const p = path[i];
+
+              if (p) {
+                segment.push(p);
+              }
+
+              if (!p || i === path.length - 1) {
+                if (segment.length > 1) {
+                  ctx.beginPath();
+                  ctx.strokeStyle = segment[0].color;
+                  ctx.moveTo(segment[0].x, segment[0].y);
+                  for (let j = 1; j < segment.length; j++) {
+                    ctx.lineTo(segment[j].x, segment[j].y);
+                  }
+                  ctx.stroke();
+                }
+                segment = [];
               }
             }
-            ctx.stroke();
+
           }
         }
+
 
         canvas.addEventListener('touchstart', startDraw);
         canvas.addEventListener('touchmove', draw);
@@ -148,6 +225,9 @@ export default function DrawingPage() {
 
       <View style={styles.controls}>
         <ScrollView horizontal contentContainerStyle={styles.colorPicker}>
+          <TouchableOpacity onPress={toggleEraser}>
+            <Image source={eraserIcon} style={[styles.eraserIcon, isEraser && styles.eraserActive]} />
+          </TouchableOpacity>
           {colors.map((color) => (
             <TouchableOpacity
               key={color}
@@ -155,11 +235,12 @@ export default function DrawingPage() {
                 styles.colorButton,
                 {
                   backgroundColor: color,
-                  borderColor: selectedColor === color ? 'black' : 'transparent',
+                  borderColor: selectedColor === color && !isEraser ? 'black' : 'transparent',
                 },
               ]}
               onPress={() => {
                 setSelectedColor(color);
+                setIsEraser(false);
                 sendToWebView(`window.setColor("${color}");`);
               }}
             />
@@ -196,6 +277,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 10,
     marginBottom: 10,
+    alignItems: 'center',
   },
   colorButton: {
     width: 32,
@@ -207,5 +289,16 @@ const styles = StyleSheet.create({
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+  },
+  eraserIcon: {
+    width: 32,
+    height: 32,
+    marginHorizontal: 5,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  eraserActive: {
+    borderColor: 'black',
   },
 });
