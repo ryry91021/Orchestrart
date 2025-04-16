@@ -1,217 +1,211 @@
 import React, { useRef, useState } from 'react';
-import { View, StyleSheet, Button, ScrollView, TouchableOpacity, Text } from 'react-native';
+import { View, StyleSheet, Button, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { Alert } from 'react-native';
+import type { WebView as WebViewType } from 'react-native-webview';
 
-const colors = ['black', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'white']; // white = eraser
+const colors = ['black', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'white'];
 
 export default function DrawingPage() {
-    const webviewRef = useRef(null);
-    const [selectedColor, setSelectedColor] = useState('black');
+  const webviewRef = useRef<WebViewType>(null);
+  const [selectedColor, setSelectedColor] = useState('black');
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
-    const [isDarkMode, setIsDarkMode] = useState(false);
+  const sendToWebView = (jsCode: string) => {
+    webviewRef.current?.injectJavaScript(jsCode);
+  };
 
-    const toggleDarkMode = () => {
-      setIsDarkMode(!isDarkMode);
-      const bg = !isDarkMode ? 'black' : 'white';
-      const fg = !isDarkMode ? 'white' : 'black';
-      sendToWebView(`window.setTheme("${bg}", "${fg}");`);
-    };
+  const toggleDarkMode = () => {
+    const nextMode = !isDarkMode;
+    setIsDarkMode(nextMode);
+    const bg = nextMode ? 'black' : 'white';
+    sendToWebView(`window.setTheme("${bg}");`);
+  };
 
-
-    const sendToWebView = (jsCode: string) => {
-        (webviewRef.current as any)?.injectJavaScript(jsCode);
-    };
-
-    const htmlContent = `
+  const htmlContent = `
     <!DOCTYPE html>
     <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          body, html { margin: 0; padding: 0; overflow: hidden; }
-          canvas { touch-action: none; background: white; display: block; }
-        </style>
-      </head>
-      <body>
-        <canvas id="canvas"></canvas>
-        <script>
-          const canvas = document.getElementById('canvas');
-          const ctx = canvas.getContext('2d');
-          let painting = false;
-          let currentColor = 'black';
-          let currentBackground = 'white';
-          let lineWidth = 5;
-          let paths = [];
-          let redostack = [];
-
-
-          function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-          }
-
-          window.addEventListener('resize', resizeCanvas);
-          resizeCanvas();
-
-          function startDraw(e) {
-            painting = true;
-            const touch = e.touches[0];
-            const path = [{ x: touch.clientX, y: touch.clientY, color: currentColor }];
-            paths.push(path);
-          }
-
-          function draw(e) {
-            if (!painting) return;
-            const touch = e.touches[0];
-            const path = paths[paths.length - 1];
-            path.push({ x: touch.clientX, y: touch.clientY, color: currentColor });
-            redraw();
-          }
-
-          function endDraw() {
-            painting = false;
-          }
-
-          function redraw() {
-            ctx.fillStyle = currentBackground;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            for (let path of paths) {
-              ctx.beginPath();
-              for (let i = 0; i < path.length; i++) {
-                ctx.strokeStyle = path[i].color;
-                ctx.lineWidth = 5;
-                if (i === 0) {
-                  ctx.moveTo(path[i].x, path[i].y);
-                } else {
-                  ctx.lineTo(path[i].x, path[i].y);
-                }
-              }
-              ctx.stroke();
-            }
-          }
-
-
-          canvas.addEventListener('touchstart', startDraw);
-          canvas.addEventListener('touchmove', draw);
-          canvas.addEventListener('touchend', endDraw);
-
-          window.setColor = function (color) {
-            currentColor = color;
-          };
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        html, body { margin: 0; padding: 0; overflow: hidden; }
+        canvas { touch-action: none; display: block; }
+      </style>
+    </head>
+    <body>
+      <canvas id="canvas"></canvas>
+      <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let painting = false;
+        let currentColor = 'black';
+        let currentBackground = 'white';
+        let lineWidth = 5;
+        let paths = [];
         let redostack = [];
 
-        window.undo = function () {
-        if (paths.length > 0) {
-            redostack.push(paths.pop()); //push not append
-            console.log('Redo Stack:', redostack);
-            redraw();
+        function resizeCanvas() {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          redraw();
         }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function getTouchPos(e) {
+          const touch = e.touches[0];
+          const rect = canvas.getBoundingClientRect();
+          return {
+            x: touch.clientX - rect.left,
+            y: touch.clientY - rect.top
+          };
+        }
+
+        function startDraw(e) {
+          painting = true;
+          const pos = getTouchPos(e);
+          const path = [{ x: pos.x, y: pos.y, color: currentColor }];
+          paths.push(path);
+        }
+
+        function draw(e) {
+          if (!painting) return;
+          const pos = getTouchPos(e);
+          const path = paths[paths.length - 1];
+          path.push({ x: pos.x, y: pos.y, color: currentColor });
+          redraw();
+        }
+
+        function endDraw() {
+          painting = false;
+        }
+
+        function redraw() {
+          ctx.fillStyle = currentBackground;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          for (let path of paths) {
+            ctx.beginPath();
+            for (let i = 0; i < path.length; i++) {
+              ctx.strokeStyle = path[i].color;
+              ctx.lineWidth = lineWidth;
+              if (i === 0) {
+                ctx.moveTo(path[i].x, path[i].y);
+              } else {
+                ctx.lineTo(path[i].x, path[i].y);
+              }
+            }
+            ctx.stroke();
+          }
+        }
+
+        canvas.addEventListener('touchstart', startDraw);
+        canvas.addEventListener('touchmove', draw);
+        canvas.addEventListener('touchend', endDraw);
+
+        window.setColor = function (color) {
+          currentColor = color;
         };
 
-        window.setTheme = function (bg, fg) {
+        window.setTheme = function (bg) {
+          currentBackground = bg;
           canvas.style.backgroundColor = bg;
-          currentColor = fg;
           redraw();
         };
 
-        window.redo = function () {
-        if (redostack.length > 0) {
-            paths.push(redostack.pop());
-            console.log('Redoing...', paths);
+        window.undo = function () {
+          if (paths.length > 0) {
+            redostack.push(paths.pop());
             redraw();
-        }
+          }
+        };
+
+        window.redo = function () {
+          if (redostack.length > 0) {
+            paths.push(redostack.pop());
+            redraw();
+          }
         };
 
         window.clearCanvas = function () {
-        paths = [];
-        redostack = [];
-        redraw();
+          paths = [];
+          redostack = [];
+          redraw();
         };
-        </script>
-      </body>
+      </script>
+    </body>
     </html>
   `;
 
-    return (
-        <View style={styles.container}>
-            <WebView
-                ref={webviewRef}
-                originWhitelist={['*']}
-                source={{ html: htmlContent }}
-                javaScriptEnabled
-                style={styles.webview}
+  return (
+    <View style={styles.container}>
+      <WebView
+        ref={webviewRef}
+        originWhitelist={['*']}
+        source={{ html: htmlContent }}
+        javaScriptEnabled
+        style={styles.webview}
+      />
+
+      <View style={styles.controls}>
+        <ScrollView horizontal contentContainerStyle={styles.colorPicker}>
+          {colors.map((color) => (
+            <TouchableOpacity
+              key={color}
+              style={[
+                styles.colorButton,
+                {
+                  backgroundColor: color,
+                  borderColor: selectedColor === color ? 'black' : 'transparent',
+                },
+              ]}
+              onPress={() => {
+                setSelectedColor(color);
+                sendToWebView(`window.setColor("${color}");`);
+              }}
             />
+          ))}
+        </ScrollView>
 
-            <View style={styles.controls}>
-                <ScrollView horizontal contentContainerStyle={styles.colorPicker}>
-                    {colors.map((color) => (
-                        <TouchableOpacity
-                            key={color}
-                            style={[styles.colorButton, { backgroundColor: color, borderColor: selectedColor === color ? 'black' : 'transparent' }]}
-                            onPress={() => {
-                                setSelectedColor(color);
-                                sendToWebView(`window.setColor("${color}");`);
-                            }}
-                        />
-                    ))}
-                </ScrollView>
-
-                <View style={styles.buttonRow}>
-                    <Button title="Undo" onPress={() => sendToWebView('window.undo();')} />
-                <Button
-                  title={isDarkMode ? 'Light Mode' : 'Dark Mode'}
-                  onPress={toggleDarkMode}
-                />
-
-                    <Button
-                        title="Clear"
-                        onPress={() => {
-                            Alert.alert(
-                                'Clear Canvas',
-                                'Are you sure you want to clear the canvas?',
-                                [
-                                    { text: 'Cancel', style: 'cancel' },
-                                    {
-                                        text: 'Clear',
-                                        style: 'destructive',
-                                        onPress: () => sendToWebView('window.clearCanvas();'),
-                                    },
-                                ],
-                                { cancelable: true }
-                            );
-                        }}
-                    />
-
-                    <Button title="Redo" onPress={() => sendToWebView ('window.redo();')} />
-                </View>
-            </View>
+        <View style={styles.buttonRow}>
+          <Button title="Undo" onPress={() => sendToWebView('window.undo();')} />
+          <Button title={isDarkMode ? 'Light Mode' : 'Dark Mode'} onPress={toggleDarkMode} />
+          <Button
+            title="Clear"
+            onPress={() =>
+              Alert.alert('Clear Canvas', 'Are you sure?', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Clear', style: 'destructive', onPress: () => sendToWebView('window.clearCanvas();') },
+              ])
+            }
+          />
+          <Button title="Redo" onPress={() => sendToWebView('window.redo();')} />
         </View>
-    );
+      </View>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    webview: { flex: 1 },
-    controls: {
-        backgroundColor: '#f1f1f1',
-        paddingVertical: 10,
-    },
-    colorPicker: {
-        flexDirection: 'row',
-        paddingHorizontal: 10,
-        marginBottom: 10,
-    },
-    colorButton: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        marginHorizontal: 5,
-        borderWidth: 2,
-    },
-    buttonRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-    },
+  container: { flex: 1 },
+  webview: { flex: 1 },
+  controls: {
+    backgroundColor: '#f1f1f1',
+    paddingVertical: 10,
+  },
+  colorPicker: {
+    flexDirection: 'row',
+    paddingHorizontal: 10,
+    marginBottom: 10,
+  },
+  colorButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginHorizontal: 5,
+    borderWidth: 2,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
 });
