@@ -44,7 +44,7 @@ export default function DrawingPage() {
   const playMusic = async () => {
     if (!sound) {
       const { sound: newSound } = await Audio.Sound.createAsync(
-        require('../assets/music.mp3'), // replace with your file
+        require('../assets/Steamboat Willie.mp3'), // replace with your file
         { shouldPlay: true, isLooping: true }
       );
       setSound(newSound);
@@ -58,6 +58,30 @@ export default function DrawingPage() {
       await sound.pauseAsync();
     }
   };
+  const fadeOutAndPause = async () => {
+    if (!sound) return;
+
+    const steps = 10;
+    const duration = 1000; // in milliseconds
+    const interval = duration / steps;
+
+    const status = await sound.getStatusAsync();
+    if (!status.isLoaded) return;
+
+    let volume = status.volume ?? 1.0;
+
+    for (let i = 1; i <= steps; i++) {
+      setTimeout(() => {
+        const newVolume = volume * ((steps - i) / steps);
+        sound.setVolumeAsync(newVolume);
+        if (i === steps) {
+          sound.pauseAsync();
+          sound.setVolumeAsync(volume); // reset volume for next play
+        }
+      }, i * interval);
+    }
+  };
+
   
 
   const htmlContent = `
@@ -265,7 +289,7 @@ export default function DrawingPage() {
             if (musicEnabled) {
               if (!sound) {
                 const { sound: newSound } = await Audio.Sound.createAsync(
-                  require('../assets/music.mp3'),
+                  require('../assets/Steamboat Willie.mp3'),
                   { shouldPlay: true, isLooping: true }
                 );
                 setSound(newSound);
@@ -276,7 +300,7 @@ export default function DrawingPage() {
             }
           } else if (msg === 'stopDrawing') {
             if (sound && musicEnabled) {
-              await sound.pauseAsync();
+              fadeOutAndPause();
             }
           }
         }}
