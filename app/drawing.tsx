@@ -28,7 +28,7 @@ export default function DrawingPage() {
   const playMusic = async () => {
     if (!sound) {
       const { sound: newSound } = await Audio.Sound.createAsync(
-        require('../public/test.mp3'), // replace with your file
+        require('../assets/music.mp3'), // replace with your file
         { shouldPlay: true, isLooping: true }
       );
       setSound(newSound);
@@ -187,7 +187,7 @@ export default function DrawingPage() {
             if (musicEnabled) {
               if (!sound) {
                 const { sound: newSound } = await Audio.Sound.createAsync(
-                  require('./assets/music.mp3'),
+                  require('../assets/music.mp3'),
                   { shouldPlay: true, isLooping: true }
                 );
                 setSound(newSound);
