@@ -38,6 +38,7 @@ export default function DrawingPage() {
     const eraserColor = isDarkMode ? 'black' : 'white';
     const colorToUse = newIsEraser ? eraserColor : selectedColor;
     sendToWebView(`window.setColor("${colorToUse}");`);
+
   };
 
   const playMusic = async () => {
