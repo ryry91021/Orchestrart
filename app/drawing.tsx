@@ -2,13 +2,12 @@ import React, { useRef, useState } from 'react';
 import { View, StyleSheet, Button, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { WebView as WebViewType } from 'react-native-webview';
-import {Audio} from "expo-av";
+import { Audio } from 'expo-av';
 
 const eraserIcon = require('../assets/images/eraser_button.png');
 
 const colors = ['black', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'white'];
 
-//main drawing page
 export default function DrawingPage() {
   const webviewRef = useRef<WebViewType>(null);
   const [selectedColor, setSelectedColor] = useState('black');
@@ -16,6 +15,9 @@ export default function DrawingPage() {
   const [isEraser, setIsEraser] = useState(false);
   const [musicEnabled, setMusicEnabled] = useState(false);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [lastDrawTime, setLastDrawTime] = useState<number>(Date.now());
+  const fadeTimeoutId = useRef<NodeJS.Timeout | null>(null);
+  const fadeTimers = useRef<NodeJS.Timeout[]>([]); // NEW
 
   const sendToWebView = (jsCode: string) => {
     webviewRef.current?.injectJavaScript(jsCode);
@@ -26,7 +28,6 @@ export default function DrawingPage() {
     setIsDarkMode(nextMode);
     const bg = nextMode ? 'black' : 'white';
     sendToWebView(`window.setTheme("${bg}");`);
-
     if (isEraser) {
       sendToWebView(`window.setColor("${bg}");`);
     }
@@ -38,54 +39,39 @@ export default function DrawingPage() {
     const eraserColor = isDarkMode ? 'black' : 'white';
     const colorToUse = newIsEraser ? eraserColor : selectedColor;
     sendToWebView(`window.setColor("${colorToUse}");`);
-
   };
 
-  const playMusic = async () => {
-    if (!sound) {
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        require('../assets/Steamboat Willie.mp3'), // replace with your file
-        { shouldPlay: true, isLooping: true }
-      );
-      setSound(newSound);
-    } else {
-      await sound.playAsync();
-    }
-  };
-  
-  const pauseMusic = async () => {
-    if (sound) {
-      await sound.pauseAsync();
-    }
-  };
   const fadeOutAndPause = async () => {
     if (!sound) return;
 
     const steps = 10;
-    const duration = 1000; // in milliseconds
+    const duration = 1000;
     const interval = duration / steps;
 
     const status = await sound.getStatusAsync();
     if (!status.isLoaded) return;
 
-    let volume = status.volume ?? 1.0;
+    const originalVolume = status.volume ?? 1.0;
+
+    // Clear previous fade timers
+    fadeTimers.current.forEach(clearTimeout);
+    fadeTimers.current = [];
 
     for (let i = 1; i <= steps; i++) {
-      setTimeout(() => {
-        const newVolume = volume * ((steps - i) / steps);
+      const timer = setTimeout(() => {
+        const newVolume = originalVolume * ((steps - i) / steps);
         sound.setVolumeAsync(newVolume);
         if (i === steps) {
           sound.pauseAsync();
-          sound.setVolumeAsync(volume); // reset volume for next play
+          sound.setVolumeAsync(originalVolume);
+          fadeTimers.current = [];
         }
       }, i * interval);
+      fadeTimers.current.push(timer);
     }
   };
 
-  
-
-  const htmlContent = `
-    <!DOCTYPE html>
+  const htmlContent = `<!DOCTYPE html>
     <html>
     <head>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -124,43 +110,8 @@ export default function DrawingPage() {
           };
         }
 
-        function distance(p1, p2) {
-          return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
-        }
-
-        function startDraw(e) {
-          const pos = getTouchPos(e);
-
-          if (currentColor === currentBackground) {
-            // Eraser: immediately delete any points near the touch
-            eraseAt(pos);
-            redraw();
-            return;
-          }
-
-          painting = true;
-          const path = [{ x: pos.x, y: pos.y, color: currentColor }];
-          paths.push(path);
-        }
-
-        function draw(e) {
-          const pos = getTouchPos(e);
-
-          if (currentColor === currentBackground) {
-            eraseAt(pos);
-            redraw();
-            return;
-          }
-
-          if (!painting) return;
-          const path = paths[paths.length - 1];
-          path.push({ x: pos.x, y: pos.y, color: currentColor });
-          redraw();
-        }
-
         function eraseAt(pos) {
           const radius = 10;
-
           for (let pathIndex = paths.length - 1; pathIndex >= 0; pathIndex--) {
             const path = paths[pathIndex];
             for (let i = 0; i < path.length; i++) {
@@ -169,23 +120,44 @@ export default function DrawingPage() {
               const dx = p.x - pos.x;
               const dy = p.y - pos.y;
               if (dx * dx + dy * dy < radius * radius) {
-                path[i] = null; // mark point as erased
+                path[i] = null;
               }
             }
-
-            // If all points in the path are null, remove the path
             if (path.every(p => p === null)) {
               paths.splice(pathIndex, 1);
             }
           }
         }
 
+        function startDraw(e) {
+          painting = true;
+          const pos = getTouchPos(e);
+          if (currentColor === currentBackground) {
+            eraseAt(pos);
+            redraw();
+            return;
+          }
+          const path = [{ x: pos.x, y: pos.y, color: currentColor }];
+          paths.push(path);
+          window.ReactNativeWebView?.postMessage("startDrawing");
+        }
 
-
-
+        function draw(e) {
+          const pos = getTouchPos(e);
+          if (currentColor === currentBackground) {
+            eraseAt(pos);
+            redraw();
+            return;
+          }
+          if (!painting) return;
+          const path = paths[paths.length - 1];
+          path.push({ x: pos.x, y: pos.y, color: currentColor });
+          redraw();
+        }
 
         function endDraw() {
           painting = false;
+          window.ReactNativeWebView?.postMessage("stopDrawing");
         }
 
         function redraw() {
@@ -195,16 +167,12 @@ export default function DrawingPage() {
           for (let path of paths) {
             ctx.beginPath();
             ctx.lineWidth = lineWidth;
-
             let segment = [];
-
             for (let i = 0; i <= path.length; i++) {
               const p = path[i];
-
               if (p) {
                 segment.push(p);
               }
-
               if (!p || i === path.length - 1) {
                 if (segment.length > 1) {
                   ctx.beginPath();
@@ -218,10 +186,8 @@ export default function DrawingPage() {
                 segment = [];
               }
             }
-
           }
         }
-
 
         canvas.addEventListener('touchstart', startDraw);
         canvas.addEventListener('touchmove', draw);
@@ -256,23 +222,9 @@ export default function DrawingPage() {
           redostack = [];
           redraw();
         };
-
-        function startDraw(e) {
-          painting = true;
-          const pos = getTouchPos(e);
-          const path = [{ x: pos.x, y: pos.y, color: currentColor }];
-          paths.push(path);
-          window.ReactNativeWebView?.postMessage("startDrawing");
-        }
-
-        function endDraw() {
-          painting = false;
-          window.ReactNativeWebView?.postMessage("stopDrawing");
-        }
       </script>
     </body>
-    </html>
-  `;
+    </html>`;
 
   return (
     <View style={styles.container}>
@@ -284,8 +236,19 @@ export default function DrawingPage() {
         style={styles.webview}
         onMessage={async (event) => {
           const msg = event.nativeEvent.data;
-      
+
           if (msg === 'startDrawing') {
+            setLastDrawTime(Date.now());
+
+            if (fadeTimeoutId.current) {
+              clearTimeout(fadeTimeoutId.current);
+              fadeTimeoutId.current = null;
+            }
+
+            // Cancel fade in progress
+            fadeTimers.current.forEach(clearTimeout);
+            fadeTimers.current = [];
+
             if (musicEnabled) {
               if (!sound) {
                 const { sound: newSound } = await Audio.Sound.createAsync(
@@ -293,14 +256,26 @@ export default function DrawingPage() {
                   { shouldPlay: true, isLooping: true }
                 );
                 setSound(newSound);
+                await newSound.setVolumeAsync(1.0);
                 await newSound.playAsync();
               } else {
+                await sound.setVolumeAsync(1.0);
                 await sound.playAsync();
               }
             }
           } else if (msg === 'stopDrawing') {
-            if (sound && musicEnabled) {
-              fadeOutAndPause();
+            const now = Date.now();
+            const timeSinceDraw = now - lastDrawTime;
+
+            if (musicEnabled && sound) {
+              if (timeSinceDraw < 300) {
+                fadeTimeoutId.current = setTimeout(() => {
+                  fadeOutAndPause();
+                  fadeTimeoutId.current = null;
+                }, 300);
+              } else {
+                fadeOutAndPause();
+              }
             }
           }
         }}
@@ -343,7 +318,12 @@ export default function DrawingPage() {
             }
           />
           <Button title="Redo" onPress={() => sendToWebView('window.redo();')} />
-          <Button title={musicEnabled ? 'Music On' : 'Music Off'} onPress={async () => {setMusicEnabled((prev) => !prev); if (musicEnabled && sound) {await sound.pauseAsync();}}}/>
+          <Button title={musicEnabled ? 'Music On' : 'Music Off'} onPress={async () => {
+            setMusicEnabled((prev) => !prev);
+            if (musicEnabled && sound) {
+              await sound.pauseAsync();
+            }
+          }} />
         </View>
       </View>
     </View>
