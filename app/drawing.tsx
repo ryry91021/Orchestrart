@@ -1,3 +1,12 @@
+export const options = {
+  title: '🎨 Drawing Time',
+  headerStyle: {
+    backgroundColor: '#f1f1f1',
+  },
+  headerTintColor: 'black',
+  headerTitleAlign: 'center',
+};
+
 import React, { useRef, useState } from 'react';
 import { View, StyleSheet, Button, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -5,7 +14,6 @@ import type { WebView as WebViewType } from 'react-native-webview';
 import { Audio } from 'expo-av';
 
 const eraserIcon = require('../assets/images/eraser_button.png');
-
 const colors = ['black', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'white'];
 
 export default function DrawingPage() {
@@ -17,7 +25,7 @@ export default function DrawingPage() {
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [lastDrawTime, setLastDrawTime] = useState<number>(Date.now());
   const fadeTimeoutId = useRef<NodeJS.Timeout | null>(null);
-  const fadeTimers = useRef<NodeJS.Timeout[]>([]); // NEW
+  const fadeTimers = useRef<NodeJS.Timeout[]>([]);
 
   const sendToWebView = (jsCode: string) => {
     webviewRef.current?.injectJavaScript(jsCode);
@@ -36,6 +44,7 @@ export default function DrawingPage() {
   const toggleEraser = () => {
     const newIsEraser = !isEraser;
     setIsEraser(newIsEraser);
+    sendToWebView(`window.setEraser(${newIsEraser});`);
     const eraserColor = isDarkMode ? 'black' : 'white';
     const colorToUse = newIsEraser ? eraserColor : selectedColor;
     sendToWebView(`window.setColor("${colorToUse}");`);
@@ -52,8 +61,6 @@ export default function DrawingPage() {
     if (!status.isLoaded) return;
 
     const originalVolume = status.volume ?? 1.0;
-
-    // Clear previous fade timers
     fadeTimers.current.forEach(clearTimeout);
     fadeTimers.current = [];
 
@@ -72,159 +79,168 @@ export default function DrawingPage() {
   };
 
   const htmlContent = `<!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        html, body { margin: 0; padding: 0; overflow: hidden; }
-        canvas { touch-action: none; display: block; }
-      </style>
-    </head>
-    <body>
-      <canvas id="canvas"></canvas>
-      <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        let painting = false;
-        let currentColor = 'black';
-        let currentBackground = 'white';
-        let lineWidth = 5;
-        let paths = [];
-        let redostack = [];
+  <html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      html, body { margin: 0; padding: 0; overflow: hidden; }
+      canvas { touch-action: none; display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+    <script>
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      let painting = false;
+      let currentColor = 'black';
+      let currentBackground = 'white';
+      let lineWidth = 5;
+      let isEraser = false;
+      let paths = [];
+      let redostack = [];
 
-        function resizeCanvas() {
-          canvas.width = window.innerWidth;
-          canvas.height = window.innerHeight;
-          redraw();
-        }
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        redraw();
+      }
 
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
 
-        function getTouchPos(e) {
-          const touch = e.touches[0];
-          const rect = canvas.getBoundingClientRect();
-          return {
-            x: touch.clientX - rect.left,
-            y: touch.clientY - rect.top
-          };
-        }
+      function getTouchPos(e) {
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: touch.clientX - rect.left,
+          y: touch.clientY - rect.top
+        };
+      }
 
-        function eraseAt(pos) {
-          const radius = 10;
-          for (let pathIndex = paths.length - 1; pathIndex >= 0; pathIndex--) {
-            const path = paths[pathIndex];
-            for (let i = 0; i < path.length; i++) {
-              const p = path[i];
-              if (!p) continue;
-              const dx = p.x - pos.x;
-              const dy = p.y - pos.y;
-              if (dx * dx + dy * dy < radius * radius) {
-                path[i] = null;
-              }
-            }
-            if (path.every(p => p === null)) {
-              paths.splice(pathIndex, 1);
+      function eraseAt(pos) {
+        const radius = 10;
+        for (let pathIndex = paths.length - 1; pathIndex >= 0; pathIndex--) {
+          const path = paths[pathIndex];
+          for (let i = 0; i < path.length; i++) {
+            const p = path[i];
+            if (!p) continue;
+            const dx = p.x - pos.x;
+            const dy = p.y - pos.y;
+            if (dx * dx + dy * dy < radius * radius) {
+              path[i] = null;
             }
           }
-        }
-
-        function startDraw(e) {
-          painting = true;
-          const pos = getTouchPos(e);
-          if (currentColor === currentBackground) {
-            eraseAt(pos);
-            redraw();
-            return;
+          if (path.every(p => p === null)) {
+            paths.splice(pathIndex, 1);
           }
-          const path = [{ x: pos.x, y: pos.y, color: currentColor }];
-          paths.push(path);
-          window.ReactNativeWebView?.postMessage("startDrawing");
         }
+      }
 
-        function draw(e) {
-          const pos = getTouchPos(e);
-          if (currentColor === currentBackground) {
-            eraseAt(pos);
-            redraw();
-            return;
-          }
-          if (!painting) return;
-          const path = paths[paths.length - 1];
-          path.push({ x: pos.x, y: pos.y, color: currentColor });
+      function startDraw(e) {
+        painting = true;
+        const pos = getTouchPos(e);
+
+        if (isEraser) {
+          eraseAt(pos);
           redraw();
+          return;
         }
 
-        function endDraw() {
-          painting = false;
-          window.ReactNativeWebView?.postMessage("stopDrawing");
+        const path = [{ x: pos.x, y: pos.y, color: currentColor }];
+        paths.push(path);
+        window.ReactNativeWebView?.postMessage("startDrawing");
+      }
+
+      function draw(e) {
+        const pos = getTouchPos(e);
+
+        if (isEraser) {
+          eraseAt(pos);
+          redraw();
+          return;
         }
 
-        function redraw() {
-          ctx.fillStyle = currentBackground;
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (!painting) return;
+        const path = paths[paths.length - 1];
+        path.push({ x: pos.x, y: pos.y, color: currentColor });
+        redraw();
+      }
 
-          for (let path of paths) {
-            ctx.beginPath();
-            ctx.lineWidth = lineWidth;
-            let segment = [];
-            for (let i = 0; i <= path.length; i++) {
-              const p = path[i];
-              if (p) {
-                segment.push(p);
-              }
-              if (!p || i === path.length - 1) {
-                if (segment.length > 1) {
-                  ctx.beginPath();
-                  ctx.strokeStyle = segment[0].color;
-                  ctx.moveTo(segment[0].x, segment[0].y);
-                  for (let j = 1; j < segment.length; j++) {
-                    ctx.lineTo(segment[j].x, segment[j].y);
-                  }
-                  ctx.stroke();
+      function endDraw() {
+        painting = false;
+        window.ReactNativeWebView?.postMessage("stopDrawing");
+      }
+
+      function redraw() {
+        ctx.fillStyle = currentBackground;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        for (let path of paths) {
+          ctx.beginPath();
+          ctx.lineWidth = lineWidth;
+          let segment = [];
+          for (let i = 0; i <= path.length; i++) {
+            const p = path[i];
+            if (p) {
+              segment.push(p);
+            }
+            if (!p || i === path.length - 1) {
+              if (segment.length > 1) {
+                ctx.beginPath();
+                ctx.strokeStyle = segment[0].color;
+                ctx.moveTo(segment[0].x, segment[0].y);
+                for (let j = 1; j < segment.length; j++) {
+                  ctx.lineTo(segment[j].x, segment[j].y);
                 }
-                segment = [];
+                ctx.stroke();
               }
+              segment = [];
             }
           }
         }
+      }
 
-        canvas.addEventListener('touchstart', startDraw);
-        canvas.addEventListener('touchmove', draw);
-        canvas.addEventListener('touchend', endDraw);
+      canvas.addEventListener('touchstart', startDraw);
+      canvas.addEventListener('touchmove', draw);
+      canvas.addEventListener('touchend', endDraw);
 
-        window.setColor = function (color) {
-          currentColor = color;
-        };
+      window.setColor = function (color) {
+        currentColor = color;
+      };
 
-        window.setTheme = function (bg) {
-          currentBackground = bg;
-          canvas.style.backgroundColor = bg;
+      window.setTheme = function (bg) {
+        currentBackground = bg;
+        canvas.style.backgroundColor = bg;
+        redraw();
+      };
+
+      window.setEraser = function (flag) {
+        isEraser = flag;
+      };
+
+      window.undo = function () {
+        if (paths.length > 0) {
+          redostack.push(paths.pop());
           redraw();
-        };
+        }
+      };
 
-        window.undo = function () {
-          if (paths.length > 0) {
-            redostack.push(paths.pop());
-            redraw();
-          }
-        };
-
-        window.redo = function () {
-          if (redostack.length > 0) {
-            paths.push(redostack.pop());
-            redraw();
-          }
-        };
-
-        window.clearCanvas = function () {
-          paths = [];
-          redostack = [];
+      window.redo = function () {
+        if (redostack.length > 0) {
+          paths.push(redostack.pop());
           redraw();
-        };
-      </script>
-    </body>
-    </html>`;
+        }
+      };
+
+      window.clearCanvas = function () {
+        paths = [];
+        redostack = [];
+        redraw();
+      };
+    </script>
+  </body>
+  </html>`;
 
   return (
     <View style={styles.container}>
@@ -245,14 +261,13 @@ export default function DrawingPage() {
               fadeTimeoutId.current = null;
             }
 
-            // Cancel fade in progress
             fadeTimers.current.forEach(clearTimeout);
             fadeTimers.current = [];
 
             if (musicEnabled) {
               if (!sound) {
                 const { sound: newSound } = await Audio.Sound.createAsync(
-                  require('../assets/Steamboat Willie.mp3'),
+                  require('../assets/tunes/Steamboat Willie.mp3'),
                   { shouldPlay: true, isLooping: true }
                 );
                 setSound(newSound);
@@ -263,6 +278,7 @@ export default function DrawingPage() {
                 await sound.playAsync();
               }
             }
+
           } else if (msg === 'stopDrawing') {
             const now = Date.now();
             const timeSinceDraw = now - lastDrawTime;
@@ -299,6 +315,7 @@ export default function DrawingPage() {
               onPress={() => {
                 setSelectedColor(color);
                 setIsEraser(false);
+                sendToWebView(`window.setEraser(false);`);
                 sendToWebView(`window.setColor("${color}");`);
               }}
             />
