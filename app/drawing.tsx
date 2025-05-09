@@ -8,7 +8,7 @@ import { songList } from '../assets/tunes/tunesIndex';
 const eraserIcon = require('../assets/images/eraser_button.png');
 const musicIcon = require('../assets/images/music_notes.png')
 
-const colors = ['black', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'white'];
+const colors = ['black', 'white', 'grey', 'red', 'orange','yellow','green','blue','cyan','pink','purple'];
 
 export default function DrawingPage() {
   const webviewRef = useRef<WebViewType>(null);
